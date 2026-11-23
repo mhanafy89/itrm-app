@@ -2175,19 +2175,19 @@ async function handleLookupDelete(type, id, name) {
 const SLA_TABS = {
   stages: {
     label: "Stage times",
-    hint: "Working days per stage for a medium-priority, normal-category case. A pipeline stage counts when the case is at or before it. A non-pipeline stage (e.g. Newgen vendor development, DMO triage) adds its own days, then continues after its order. Order 0 restarts at Analysis.",
+    hint: "Pipeline stages (checked) form the effort-driven stage SLA: their order and \"Default planned effort\" are copied into every request, where it can be changed per request. Request/Incident days belong to the older time-based SLA: a pipeline stage counts when the case is at or before it; a non-pipeline stage (e.g. Newgen, DMO) adds its own days; order 0 restarts at the first stage. Changing the pipeline affects requests the next time they are opened or changed.",
   },
   priorities: {
     label: "Priority factors",
-    hint: "Legacy time-based SLA: stage days are multiplied by the factor and rounded up (minimum 1 day). The effort-driven stage SLA uses the same factor as set in General > Priority factor. Response and update cadence are reference targets.",
+    hint: "Used by both SLAs. Time-based SLA: stage days are multiplied by the factor and rounded up (minimum 1 day). Stage SLA: the planned effort is multiplied or divided by the factor (General > Priority factor) to give the target; consumed effort is never adjusted. The preview shows the stage SLA target for 10 man-days. Response and update cadence are reference targets.",
   },
   categories: {
     label: "Category factors",
-    hint: "Extra multiplier for business requests by business category. Incidents ignore it.",
+    hint: "Time-based SLA only: extra multiplier for business requests by business category (incidents ignore it). The stage SLA does not use it.",
   },
   statuses: {
     label: "Status handling",
-    hint: "Done statuses have no remaining time. Paused statuses stop the SLA clock (the target is shown as if resumed today).",
+    hint: "Done statuses have no remaining time. Paused statuses stop the SLA clock (the target is shown as if resumed today). These also decide the starting state when a request is first tracked and how edits made in the request form (Completed, On Hold, Cancelled, In Progress) update the stage SLA.",
   },
   general: { label: "General", hint: "Weekend days, plus the stage SLA thresholds and rules. The stage SLA uses the \"Effort (man-days)\" column of Stage times as each stage's default planned effort." },
 };
@@ -2199,6 +2199,14 @@ let slaTab = "stages";
 const slaInput = (type, i, field, value, attrs = "") =>
   `<input type="${type}" data-row="${i}" data-field="${field}" value="${escapeHtml(value)}" ${attrs} />`;
 
+// Stage SLA target (working days) for 10 planned man-days under the current priority factor mode.
+function slaTargetPreview(factor) {
+  const f = Number(factor);
+  if (!(f > 0)) return "\u2014";
+  const days = slaCfg.settings.priority_factor_mode === "divisor" ? 10 / f : 10 * f;
+  return `${Math.round(days * 100) / 100} days`;
+}
+
 function renderSlaSettingsTable() {
   const wrap = document.getElementById("slaTableWrap");
   const table = (heads, rows) =>
@@ -2207,7 +2215,7 @@ function renderSlaSettingsTable() {
 
   if (slaTab === "stages") {
     wrap.innerHTML = table(
-      ["Stage", "Order", "Pipeline", "Request days", "Incident days", "Effort (man-days)"],
+      ["Stage", "Order", "Pipeline", "Request days", "Incident days", "Default planned effort (man-days)"],
       slaCfg.stages.map((r, i) => `<tr>${nameCell(r)}
         <td>${slaInput("number", i, "stage_order", r.stage_order, 'min="0" max="99" step="1"')}</td>
         <td><input type="checkbox" data-row="${i}" data-field="is_pipeline" ${r.is_pipeline ? "checked" : ""} /></td>
@@ -2217,11 +2225,12 @@ function renderSlaSettingsTable() {
     );
   } else if (slaTab === "priorities") {
     wrap.innerHTML = table(
-      ["Priority", "Factor", "Response (business hours)", "Status update every (days)"],
+      ["Priority", "Factor", "Response (business hours)", "Status update every (days)", "Stage SLA target for 10 man-days"],
       slaCfg.priorities.map((r, i) => `<tr>${nameCell(r)}
         <td>${slaInput("number", i, "factor", r.factor, 'min="0.1" max="10" step="0.05"')}</td>
         <td>${slaInput("number", i, "response_hours", r.response_hours, 'min="0" max="999" step="0.5"')}</td>
-        <td>${slaInput("number", i, "update_days", r.update_days, 'min="0" max="365" step="1"')}</td></tr>`).join("")
+        <td>${slaInput("number", i, "update_days", r.update_days, 'min="0" max="365" step="1"')}</td>
+        <td data-preview>${slaTargetPreview(r.factor)}</td></tr>`).join("")
     );
   } else if (slaTab === "categories") {
     wrap.innerHTML = table(
@@ -2351,6 +2360,10 @@ function wireSlaSettings() {
     if (el.type === "checkbox") row[field] = el.checked ? 1 : 0;
     else if (el.type === "number") row[field] = el.value === "" ? "" : Number(el.value);
     else row[field] = el.value;
+    if (slaTab === "priorities" && field === "factor") {
+      const cell = el.closest("tr").querySelector("[data-preview]");
+      if (cell) cell.textContent = slaTargetPreview(row.factor);
+    }
   });
 }
 
