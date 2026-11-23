@@ -1,0 +1,626 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ITRM Business Request Tracker</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand-lockup">
+      <span class="brand-kicker">ITRM Operations</span>
+      <h1>Business Request Tracker</h1>
+    </div>
+    <div class="topbar-actions">
+      <div class="user-menu">
+        <span id="currentUserName" class="user-menu-name"></span>
+        <button id="changePasswordBtn" class="btn btn-ghost">Change Password</button>
+        <button id="logoutBtn" class="btn btn-ghost">Log out</button>
+      </div>
+      <button id="importBtn" class="btn write-only">&#8681; Import &amp; Merge</button>
+      <button id="manageLookupsBtn" class="btn write-only">&#9881; Manage Lookups</button>
+      <button id="slaSettingsBtn" class="btn write-only">&#9201; SLA Settings</button>
+      <button id="newRequestBtn" class="btn btn-primary write-only">+ New Request</button>
+    </div>
+  </header>
+
+  <div id="dbLostBanner" class="db-lost-banner hidden">
+    &#9888; Database connection lost &mdash; retrying&hellip;
+  </div>
+
+  <nav class="screen-tabs">
+    <button class="screen-tab" data-screen="dashboard">&#128202; Dashboard</button>
+    <button class="screen-tab active" data-screen="requests">Business Requests</button>
+    <button class="screen-tab" data-screen="incidents">Incidents</button>
+    <button class="screen-tab" data-screen="followup">&#9200; Follow-up</button>
+    <button class="screen-tab" data-screen="myfollowups">&#9733; My Follow-ups</button>
+    <button class="screen-tab" data-screen="query">&#128269; Query</button>
+  </nav>
+
+  <main>
+    <section id="dashboardScreen" class="dashboard-screen hidden">
+      <div class="dashboard-toolbar">
+        <button type="button" id="dashboardRefreshBtn" class="btn">&#8635; Refresh</button>
+      </div>
+      <div id="dashboardTiles" class="kpi-grid"></div>
+      <div class="dashboard-panels">
+        <div class="dashboard-panel">
+          <h3>Business Requests by Stage</h3>
+          <div id="dashboardBrStage" class="breakdown-list"></div>
+        </div>
+        <div class="dashboard-panel">
+          <h3>Business Requests by Status</h3>
+          <div id="dashboardBrStatus" class="breakdown-list"></div>
+        </div>
+        <div class="dashboard-panel">
+          <h3>Business Requests by Business Unit</h3>
+          <div id="dashboardBrUnit" class="breakdown-list"></div>
+        </div>
+        <div class="dashboard-panel">
+          <h3>Incidents by Status</h3>
+          <div id="dashboardIncStatus" class="breakdown-list"></div>
+        </div>
+        <div class="dashboard-panel">
+          <h3>Open Business Requests by SLA Status</h3>
+          <div id="dashboardBrSla" class="breakdown-list"></div>
+        </div>
+        <div class="dashboard-panel">
+          <h3>Open Incidents by SLA Status</h3>
+          <div id="dashboardIncSla" class="breakdown-list"></div>
+        </div>
+        <div class="dashboard-panel">
+          <h3>Remaining SLA Days by Stage (open items)</h3>
+          <div id="dashboardSlaStage" class="breakdown-list"></div>
+        </div>
+        <div class="dashboard-panel">
+          <h3>Avg Time to Close by Business Unit (days)</h3>
+          <div id="dashboardAvgCloseUnit" class="breakdown-list"></div>
+        </div>
+        <div class="dashboard-panel">
+          <h3>Avg Time to Close by Business Category (days)</h3>
+          <div id="dashboardAvgCloseCategory" class="breakdown-list"></div>
+        </div>
+        <div class="dashboard-panel dashboard-panel-wide">
+          <h3>Monthly Volume &ndash; Created vs Closed (last 6 months)</h3>
+          <div id="dashboardTrend"></div>
+        </div>
+      </div>
+    </section>
+
+    <div id="listScreen">
+    <section class="filters">
+      <button type="button" id="clearFiltersBtn" class="btn btn-clear-filters hidden">&#10005; Clear Filters</button>
+      <div class="saved-filters-wrap">
+        <button type="button" id="savedFiltersTrigger" class="btn btn-saved-filters">&#9733; Saved Filters</button>
+        <div class="saved-filters-dropdown hidden" id="savedFiltersDropdown">
+          <div class="saved-filters-save-row">
+            <input type="text" id="savedFilterName" placeholder="Name this filter&#8230;" maxlength="50" />
+            <button type="button" id="saveFilterBtn" class="btn btn-primary">Save</button>
+          </div>
+          <div class="saved-filters-divider"></div>
+          <div id="savedFiltersList"></div>
+        </div>
+      </div>
+    </section>
+    <section class="filters filter-search-row">
+      <input id="searchInput" type="search" placeholder="Search title, BR No, CR, description..." />
+      <span class="filter-summary">Filter the register to find a record quickly</span>
+    </section>
+    <section class="filters">
+      <div class="multi-select" id="filterStage" data-all-label="All Stages" data-count-suffix="Stages">
+        <button type="button" class="multi-select-trigger">All Stages</button>
+        <div class="multi-select-dropdown hidden"></div>
+      </div>
+      <div class="multi-select" id="filterStatus" data-all-label="All Statuses" data-count-suffix="Statuses">
+        <button type="button" class="multi-select-trigger">All Statuses</button>
+        <div class="multi-select-dropdown hidden"></div>
+      </div>
+      <div class="multi-select" id="filterPriority" data-all-label="All Priorities" data-count-suffix="Priorities">
+        <button type="button" class="multi-select-trigger">All Priorities</button>
+        <div class="multi-select-dropdown hidden"></div>
+      </div>
+      <div class="multi-select" id="filterSla" data-all-label="All SLA Statuses" data-count-suffix="SLA Statuses">
+        <button type="button" class="multi-select-trigger">All SLA Statuses</button>
+        <div class="multi-select-dropdown hidden"></div>
+      </div>
+      <div class="multi-select" id="filterBusinessUnit" data-all-label="All Business Units" data-count-suffix="Business Units">
+        <button type="button" class="multi-select-trigger">All Business Units</button>
+        <div class="multi-select-dropdown hidden"></div>
+      </div>
+      <div class="multi-select" id="filterBusinessCategory" data-all-label="All Business Categories" data-count-suffix="Business Categories" data-br-only>
+        <button type="button" class="multi-select-trigger">All Business Categories</button>
+        <div class="multi-select-dropdown hidden"></div>
+      </div>
+      <div class="multi-select" id="filterRequester" data-all-label="All Requesters" data-count-suffix="Requesters">
+        <button type="button" class="multi-select-trigger">All Requesters</button>
+        <div class="multi-select-dropdown hidden"></div>
+      </div>
+      <div class="multi-select" id="filterTechOwner" data-all-label="All Tech Owners" data-count-suffix="Tech Owners">
+        <button type="button" class="multi-select-trigger">All Tech Owners</button>
+        <div class="multi-select-dropdown hidden"></div>
+      </div>
+      <div class="multi-select" id="filterSystem" data-all-label="All Systems" data-count-suffix="Systems">
+        <button type="button" class="multi-select-trigger">All Systems</button>
+        <div class="multi-select-dropdown hidden"></div>
+      </div>
+      <div class="multi-select" id="filterRm" data-all-label="All RMs" data-count-suffix="RMs">
+        <button type="button" class="multi-select-trigger">All RMs</button>
+        <div class="multi-select-dropdown hidden"></div>
+      </div>
+    </section>
+    <section class="filters" id="flagFiltersSection">
+      <span class="filter-flags-label">Flags:</span>
+      <button type="button" class="btn filter-flag-btn" data-flag="newgen_related">Newgen Related</button>
+      <button type="button" class="btn filter-flag-btn" data-flag="estimated">Estimated</button>
+      <button type="button" class="btn filter-flag-btn" data-flag="ba_required">BA Required</button>
+      <button type="button" class="btn filter-flag-btn" data-flag="brd_assigned">BRD Assigned</button>
+      <button type="button" class="btn filter-flag-btn" data-flag="regulatory">Regulatory</button>
+    </section>
+
+    <div class="table-toolbar">
+      <div class="table-toolbar-left">
+        <div class="view-toggle" id="viewToggle">
+          <button type="button" class="view-toggle-btn active" data-view="open">Open</button>
+          <button type="button" class="view-toggle-btn" data-view="closed">Closed</button>
+          <button type="button" class="view-toggle-btn" data-view="all">All</button>
+        </div>
+        <button type="button" id="staleFilterBtn" class="btn filter-flag-btn">Stale (14+ days)</button>
+      </div>
+      <div id="bulkActionsBar" class="bulk-actions-bar hidden">
+        <span id="bulkSelectedCount" class="bulk-selected-count"></span>
+        <button type="button" id="bulkEditBtn" class="btn btn-primary write-only">Bulk Edit Lookups</button>
+        <button type="button" id="bulkEmailBtn" class="btn btn-primary">&#9993; Email via Outlook</button>
+        <button type="button" id="bulkClearBtn" class="btn btn-ghost">Clear selection</button>
+      </div>
+      <div class="toolbar-right">
+      <div class="col-config">
+        <button type="button" class="col-config-trigger" id="exportTrigger">&#8595; Export</button>
+        <div class="col-config-dropdown hidden" id="exportDropdown">
+          <div class="export-dropdown-header">Export to Excel (.xls)</div>
+          <button type="button" class="export-option" data-mode="displayed">Displayed Columns</button>
+          <button type="button" class="export-option" data-mode="all">All Columns</button>
+        </div>
+      </div>
+      <div class="col-config">
+        <button type="button" class="col-config-trigger" id="copyTableBtn">Copy</button>
+        <div class="col-config-dropdown hidden" id="copyDropdown">
+          <div class="export-dropdown-header">Copy table</div>
+          <button type="button" class="export-option copy-option" data-mode="displayed">Displayed Columns</button>
+          <button type="button" class="export-option copy-option" data-mode="all">All Columns</button>
+        </div>
+      </div>
+      <div class="col-config">
+        <button type="button" class="col-config-trigger" id="densityTrigger">Density</button>
+        <div class="col-config-dropdown hidden" id="densityDropdown">
+          <label class="multi-select-option"><input type="radio" name="density" value="comfortable" /> Comfortable</label>
+          <label class="multi-select-option"><input type="radio" name="density" value="compact" /> Compact</label>
+        </div>
+      </div>
+      <div class="col-config">
+        <button type="button" class="col-config-trigger" id="colConfigTrigger">Columns</button>
+        <div class="col-config-dropdown hidden" id="colConfigDropdown"></div>
+      </div>
+      </div>
+    </div>
+
+    <section class="table-wrap">
+      <table id="requestsTable">
+        <thead>
+          <tr></tr>
+        </thead>
+        <tbody id="requestsBody">
+          <tr><td colspan="9" class="empty">Loading...</td></tr>
+        </tbody>
+      </table>
+    </section>
+    <div id="tableFooter" class="table-footer"></div>
+    </div>
+
+    <section id="queryScreen" class="query-screen hidden">
+      <div class="query-layout">
+        <aside id="schemaPanel" class="schema-panel hidden">
+          <div class="schema-panel-header">
+            <strong>Schema</strong>
+            <button type="button" id="schemaPanelClose" class="btn btn-ghost">&times;</button>
+          </div>
+          <div id="schemaPanelBody" class="schema-panel-body"></div>
+        </aside>
+        <div class="query-main">
+          <div class="query-toolbar">
+            <button type="button" id="schemaToggleBtn" class="btn">&#128196; Schema</button>
+          </div>
+          <textarea id="queryInput" class="query-input" rows="8" spellcheck="false" placeholder="SELECT TOP 20 * FROM business_requests"></textarea>
+          <div class="query-actions">
+            <button type="button" id="runQueryBtn" class="btn btn-primary">&#9654; Run</button>
+            <span class="query-hint">Ctrl+Enter to run &bull; SELECT queries only</span>
+          </div>
+          <div id="queryResults"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="followupScreen" class="followup-screen hidden">
+      <div class="followup-toolbar">
+        <div class="followup-legend">
+          <span class="followup-legend-item"><span class="followup-dot followup-dot-overdue"></span> Overdue</span>
+          <span class="followup-legend-item"><span class="followup-dot followup-dot-soon"></span> Due within 5 days</span>
+        </div>
+        <label class="followup-type-filter">
+          <input type="checkbox" id="followupIncludeIncidents" checked /> Include Incidents
+        </label>
+        <button type="button" id="followupRefreshBtn" class="btn">&#8635; Refresh</button>
+      </div>
+      <section class="table-wrap">
+        <table id="followupTable">
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Ref No</th>
+              <th>CR</th>
+              <th class="td-wrap">Title</th>
+              <th>Business Unit</th>
+              <th>Stage</th>
+              <th>Status</th>
+              <th>Priority</th>
+              <th>Due Date</th>
+              <th>Days Remaining</th>
+              <th>Tech Owner</th>
+              <th>RM</th>
+            </tr>
+          </thead>
+          <tbody id="followupBody">
+            <tr><td colspan="12" class="empty">Loading...</td></tr>
+          </tbody>
+        </table>
+      </section>
+      <div id="followupFooter" class="table-footer"></div>
+      <h3 class="followup-sla-title">SLA risks</h3>
+      <p class="followup-sla-hint">Open records whose planned go-live is earlier than the SLA target, or already in the past.</p>
+      <section class="table-wrap">
+        <table id="followupSlaTable">
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Ref No</th>
+              <th class="td-wrap">Title</th>
+              <th>Stage</th>
+              <th>Status</th>
+              <th>Priority</th>
+              <th>Planned Go-Live</th>
+              <th>SLA Target</th>
+              <th>Target vs Planned</th>
+              <th>SLA Status</th>
+              <th>Tech Owner</th>
+            </tr>
+          </thead>
+          <tbody id="followupSlaBody"></tbody>
+        </table>
+      </section>
+      <div id="followupSlaFooter" class="table-footer"></div>
+    </section>
+
+    <section id="myFollowupsScreen" class="myfollowups-screen hidden">
+      <div class="followup-toolbar">
+        <div class="followup-legend">
+          <span class="followup-legend-item">&#9733; Requests and incidents you're following</span>
+        </div>
+        <button type="button" id="myFollowupsRefreshBtn" class="btn">&#8635; Refresh</button>
+      </div>
+      <section class="table-wrap">
+        <table id="myFollowupsTable">
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Ref No</th>
+              <th class="td-wrap">Title</th>
+              <th>Business Unit</th>
+              <th>Stage</th>
+              <th>Status</th>
+              <th>Priority</th>
+              <th>Tech Owner</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="myFollowupsBody">
+            <tr><td colspan="9" class="empty">Loading...</td></tr>
+          </tbody>
+        </table>
+      </section>
+      <div id="myFollowupsFooter" class="table-footer"></div>
+    </section>
+  </main>
+
+  <div id="viewOverlay" class="overlay hidden"></div>
+  <aside id="viewPanel" class="view-panel hidden">
+    <div class="view-panel-header">
+      <h2 id="viewPanelTitle">Request Details</h2>
+      <div class="view-panel-header-actions">
+        <button id="viewFollowBtn" type="button" class="btn btn-ghost follow-btn">&#9734; Follow</button>
+        <button id="viewEditBtn" class="btn btn-primary write-only">Edit</button>
+        <button id="closeViewBtn" class="btn btn-ghost" aria-label="Close">&times;</button>
+      </div>
+    </div>
+    <div id="viewPanelBody" class="view-panel-body"></div>
+  </aside>
+
+  <div id="overlay" class="overlay hidden"></div>
+  <aside id="formPanel" class="form-panel hidden">
+    <div class="form-panel-header">
+      <h2 id="formTitle">New Business Request</h2>
+      <div class="form-panel-header-actions">
+        <button id="formFollowBtn" type="button" class="btn btn-ghost follow-btn hidden">&#9734; Follow</button>
+        <button id="closeFormBtn" class="btn btn-ghost" aria-label="Close">&times;</button>
+      </div>
+    </div>
+
+    <form id="requestForm">
+      <input type="hidden" id="id" name="id" />
+
+      <fieldset>
+        <legend>Basic Info</legend>
+        <label><span id="refNoLabel">BR No</span> <input type="text" id="br_no" name="br_no" /></label>
+        <label>CR <input type="text" id="cr" name="cr" /></label>
+        <label data-br-only>Submission Date <input type="date" id="submission_date" name="submission_date" min="2020-01-01" max="2035-12-31" /></label>
+        <label>Business Unit
+          <span class="select-with-add">
+            <div class="form-combo">
+              <input type="text" class="form-combo-input" placeholder="-- select --" autocomplete="off" />
+              <input type="hidden" id="business_unit_id" name="business_unit_id" class="form-combo-value" />
+              <div class="form-combo-dropdown hidden"></div>
+            </div>
+            <button type="button" class="btn-add" data-lookup="business-units" title="Add new Business Unit">+</button>
+          </span>
+        </label>
+        <label>Requester
+          <span class="select-with-add">
+            <div class="form-combo">
+              <input type="text" class="form-combo-input" placeholder="-- select --" autocomplete="off" />
+              <input type="hidden" id="requester_id" name="requester_id" class="form-combo-value" />
+              <div class="form-combo-dropdown hidden"></div>
+            </div>
+            <button type="button" class="btn-add" data-lookup="requesters" title="Add new Requester">+</button>
+          </span>
+        </label>
+        <label class="full">Title <span class="req">*</span><textarea id="title" name="title" required></textarea></label>
+        <label class="full">Description <textarea id="description" name="description" rows="2"></textarea></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Classification</legend>
+        <label>Priority
+          <select id="priority_id" name="priority_id"><option value="">-- select --</option></select>
+        </label>
+        <label>Stage
+          <select id="stage_id" name="stage_id"><option value="">-- select --</option></select>
+        </label>
+        <label>Status
+          <select id="status_id" name="status_id"><option value="">-- select --</option></select>
+        </label>
+        <label>System
+          <span class="select-with-add">
+            <div class="multi-select form-multi-select" id="system_ids" data-all-label="-- select --" data-count-suffix="Systems">
+              <button type="button" class="multi-select-trigger">-- select --</button>
+              <div class="multi-select-dropdown hidden"></div>
+            </div>
+            <button type="button" class="btn-add" data-lookup="systems" title="Add new System">+</button>
+          </span>
+        </label>
+        <label data-br-only>Business Category
+          <span class="select-with-add">
+            <select id="business_category_id" name="business_category_id"><option value="">-- select --</option></select>
+            <button type="button" class="btn-add" data-lookup="business-categories" title="Add new Business Category">+</button>
+          </span>
+        </label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Flags &amp; Ownership</legend>
+        <label class="checkbox"><input type="checkbox" id="newgen_related" name="newgen_related" /> Newgen Related</label>
+        <label class="checkbox"><input type="checkbox" id="estimated" name="estimated" /> Estimated</label>
+        <label class="checkbox" data-br-only><input type="checkbox" id="ba_required" name="ba_required" /> BA Required</label>
+        <label class="checkbox" data-br-only><input type="checkbox" id="brd_assigned" name="brd_assigned" /> BRD Assigned</label>
+        <label>Tech Owner
+          <span class="select-with-add">
+            <div class="multi-select form-multi-select" id="tech_owner_ids" data-all-label="-- select --" data-count-suffix="Tech Owners">
+              <button type="button" class="multi-select-trigger">-- select --</button>
+              <div class="multi-select-dropdown hidden"></div>
+            </div>
+            <button type="button" class="btn-add" data-lookup="tech-owners" title="Add new Tech Owner">+</button>
+          </span>
+        </label>
+        <label>RM
+          <span class="select-with-add">
+            <div class="form-combo">
+              <input type="text" class="form-combo-input" placeholder="-- select --" autocomplete="off" />
+              <input type="hidden" id="rm_id" name="rm_id" class="form-combo-value" />
+              <div class="form-combo-dropdown hidden"></div>
+            </div>
+            <button type="button" class="btn-add" data-lookup="rms" title="Add new RM">+</button>
+          </span>
+        </label>
+        <label class="checkbox" data-br-only><input type="checkbox" id="regulatory" name="regulatory" /> Regulatory</label>
+        <label data-br-only>Regulator
+          <span class="select-with-add">
+            <select id="regulator_id" name="regulator_id"><option value="">-- select --</option></select>
+            <button type="button" class="btn-add" data-lookup="regulators" title="Add new Regulator">+</button>
+          </span>
+        </label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Dates</legend>
+        <label data-br-only>Regulatory Deadline <input type="date" id="regulatory_deadline" name="regulatory_deadline" min="2020-01-01" max="2035-12-31" /></label>
+        <label></label>
+        <label data-br-only>Analysis Planned Start Date <input type="date" class="pipeline-date" id="analysis_planned_start_date" name="analysis_planned_start_date" min="2020-01-01" max="2035-12-31" /></label>
+        <label data-br-only>Analysis Planned End Date <input type="date" class="pipeline-date" id="analysis_planned_end_date" name="analysis_planned_end_date" min="2020-01-01" max="2035-12-31" /></label>
+        <label>Dev Planned Start Date <input type="date" class="pipeline-date" id="dev_planned_start_date" name="dev_planned_start_date" min="2020-01-01" max="2035-12-31" /></label>
+        <label>Dev Planned End Date <input type="date" class="pipeline-date" id="dev_planned_end_date" name="dev_planned_end_date" min="2020-01-01" max="2035-12-31" /></label>
+        <label>QA Planned Start Date <input type="date" class="pipeline-date" id="qa_planned_start_date" name="qa_planned_start_date" min="2020-01-01" max="2035-12-31" /></label>
+        <label>QA Planned End Date <input type="date" class="pipeline-date" id="qa_planned_end_date" name="qa_planned_end_date" min="2020-01-01" max="2035-12-31" /></label>
+        <label>UAT Planned Start Date <input type="date" class="pipeline-date" id="uat_planned_start_date" name="uat_planned_start_date" min="2020-01-01" max="2035-12-31" /></label>
+        <label>UAT Planned End Date <input type="date" class="pipeline-date" id="uat_planned_date" name="uat_planned_date" min="2020-01-01" max="2035-12-31" /></label>
+        <label>CAB Date <input type="date" class="pipeline-date" id="cab_date" name="cab_date" min="2020-01-01" max="2035-12-31" /></label>
+        <label>Deployment Planned End Date <input type="date" class="pipeline-date" id="deployment_planned_end_date" name="deployment_planned_end_date" min="2020-01-01" max="2035-12-31" /></label>
+        <label>Closed Date <input type="date" id="closed_date" name="closed_date" min="2020-01-01" max="2035-12-31" /></label>
+        <div id="dateErrors" class="field-errors"></div>
+      </fieldset>
+
+      <div id="formCommentSection" class="comment-section hidden">
+        <div class="comment-section-label">Comments</div>
+        <div class="comment-list" id="formCommentList"></div>
+        <div class="comment-add">
+          <textarea id="newCommentText" placeholder="Write a comment&#8230; (Ctrl+Enter to post)" rows="2" maxlength="2000"></textarea>
+          <button type="button" id="addCommentBtn" class="btn btn-primary">Post</button>
+        </div>
+      </div>
+
+      <div id="formErrors" class="form-errors hidden"></div>
+
+      <div class="form-actions">
+        <button type="button" id="deleteBtn" class="btn btn-danger hidden write-only">Delete</button>
+        <button type="submit" class="btn btn-primary write-only">Save</button>
+      </div>
+    </form>
+  </aside>
+
+  <div id="lookupsOverlay" class="overlay hidden"></div>
+  <div id="lookupsModal" class="lookups-modal hidden">
+    <div class="lookups-modal-header">
+      <h2>Manage Lookups</h2>
+      <button id="closeLookupsBtn" class="btn btn-ghost" aria-label="Close">&times;</button>
+    </div>
+    <div class="lookups-modal-body">
+      <nav class="lookup-tabs" id="lookupTabs" aria-label="Lookup categories"></nav>
+      <div class="lookup-panel">
+        <div class="lookup-add-row">
+          <input type="text" id="lookupNewName" placeholder="New item name..." maxlength="100" />
+          <button id="lookupAddBtn" class="btn btn-primary">+ Add</button>
+        </div>
+        <div id="lookupListWrap">
+          <ul id="lookupList"></ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="slaSettingsOverlay" class="overlay hidden"></div>
+  <div id="slaSettingsModal" class="lookups-modal sla-settings-modal hidden" role="dialog" aria-label="SLA settings">
+    <div class="lookups-modal-header">
+      <h2>SLA Settings</h2>
+      <button id="closeSlaSettingsBtn" class="btn btn-ghost" aria-label="Close">&times;</button>
+    </div>
+    <div class="lookups-modal-body">
+      <nav class="lookup-tabs" id="slaTabs" aria-label="SLA settings sections"></nav>
+      <div class="lookup-panel sla-panel">
+        <p id="slaTabHint" class="bulk-edit-hint"></p>
+        <div id="slaTableWrap" class="sla-table-wrap"></div>
+        <div id="slaErrors" class="form-errors hidden"></div>
+        <div class="sla-actions">
+          <button type="button" id="slaResetBtn" class="btn btn-danger">Reset to defaults</button>
+          <button type="button" id="slaSaveBtn" class="btn btn-primary">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="bulkEditOverlay" class="overlay hidden"></div>
+  <div id="bulkEditModal" class="lookups-modal bulk-edit-modal hidden" role="dialog" aria-label="Bulk edit lookup fields">
+    <div class="lookups-modal-header">
+      <h2>Bulk Edit Lookup Fields <span id="bulkEditCount" class="bulk-edit-count"></span></h2>
+      <button id="closeBulkEditBtn" class="btn btn-ghost" aria-label="Close">&times;</button>
+    </div>
+    <div class="bulk-edit-body">
+      <p class="bulk-edit-hint">Choose a value for any field you want to change. Fields left as "-- No change --" will not be touched on the selected records.</p>
+      <div class="bulk-edit-fields" id="bulkEditFields"></div>
+      <div id="bulkEditErrors" class="form-errors hidden"></div>
+      <div class="bulk-edit-actions">
+        <button type="button" id="bulkEditCancelBtn" class="btn">Cancel</button>
+        <button type="button" id="bulkEditApplyBtn" class="btn btn-primary write-only">Apply to Selected</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="emailOverlay" class="overlay hidden"></div>
+  <div id="emailModal" class="lookups-modal bulk-edit-modal hidden" role="dialog" aria-label="Prepare email in Outlook">
+    <div class="lookups-modal-header">
+      <h2>Prepare Email <span id="emailCount" class="bulk-edit-count"></span></h2>
+      <button id="closeEmailBtn" class="btn btn-ghost" aria-label="Close">&times;</button>
+    </div>
+    <div class="bulk-edit-body">
+      <p class="bulk-edit-hint">The selected records are added to the email as a table (using the currently displayed columns). A draft file opens in Outlook where you can review and send it.</p>
+      <div class="bulk-edit-fields">
+        <label>To <input type="text" id="emailTo" placeholder="name@company.com; name2@company.com" /></label>
+        <label>Cc <input type="text" id="emailCc" /></label>
+        <label>Subject <input type="text" id="emailSubject" /></label>
+        <label>Message <textarea id="emailMessage" rows="4"></textarea></label>
+      </div>
+      <div id="emailErrors" class="form-errors hidden"></div>
+      <div class="bulk-edit-actions">
+        <button type="button" id="emailCancelBtn" class="btn">Cancel</button>
+        <button type="button" id="emailCopyBtn" class="btn">Copy Table</button>
+        <button type="button" id="emailOpenBtn" class="btn btn-primary">Open in Outlook</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="importOverlay" class="overlay hidden"></div>
+  <div id="importModal" class="import-modal hidden" role="dialog" aria-label="Import and merge wizard">
+    <div class="import-modal-header">
+      <div>
+        <h2 id="importTitle">Import &amp; Merge Wizard</h2>
+        <div id="importSubtitle" class="import-subtitle">Bring records in from Excel or CSV</div>
+      </div>
+      <div class="import-header-actions">
+        <button type="button" id="importHistoryBtn" class="btn btn-ghost">History</button>
+        <button type="button" id="closeImportBtn" class="btn btn-ghost" aria-label="Close">&times;</button>
+      </div>
+    </div>
+    <ol id="importSteps" class="import-steps"></ol>
+    <div id="importBody" class="import-body"></div>
+    <div class="import-footer">
+      <button type="button" id="importBackBtn" class="btn">Back</button>
+      <div id="importFooterInfo" class="import-footer-info"></div>
+      <button type="button" id="importNextBtn" class="btn btn-primary">Next</button>
+    </div>
+  </div>
+
+  <div id="changePasswordOverlay" class="overlay hidden"></div>
+  <div id="changePasswordModal" class="lookups-modal change-password-modal hidden" role="dialog" aria-label="Change password">
+    <div class="lookups-modal-header">
+      <h2>Change Password</h2>
+      <button id="closeChangePasswordBtn" class="btn btn-ghost" aria-label="Close">&times;</button>
+    </div>
+    <form id="changePasswordForm" class="change-password-body">
+      <label for="currentPassword">Current Password</label>
+      <input type="password" id="currentPassword" autocomplete="current-password" required />
+      <label for="newPassword">New Password</label>
+      <input type="password" id="newPassword" autocomplete="new-password" minlength="6" required />
+      <label for="confirmNewPassword">Confirm New Password</label>
+      <input type="password" id="confirmNewPassword" autocomplete="new-password" minlength="6" required />
+      <div id="changePasswordErrors" class="form-errors hidden"></div>
+      <div id="changePasswordSuccess" class="change-password-success hidden">Password changed.</div>
+      <div class="bulk-edit-actions">
+        <button type="button" id="changePasswordCancelBtn" class="btn">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="loginScreen" class="login-screen hidden">
+    <form id="loginForm" class="login-card">
+      <div class="brand-kicker">ITRM Operations</div>
+      <h1>Business Request Tracker</h1>
+      <p class="login-subtitle">Sign in to continue</p>
+      <label for="loginUsername">Username</label>
+      <input type="text" id="loginUsername" autocomplete="username" required />
+      <label for="loginPassword">Password</label>
+      <input type="password" id="loginPassword" autocomplete="current-password" required />
+      <div id="loginError" class="login-error hidden"></div>
+      <button type="submit" class="btn btn-primary login-submit">Sign in</button>
+    </form>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
