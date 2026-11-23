@@ -1,6 +1,7 @@
 const { transaction } = require("../db/database");
 const { sendJson } = require("../lib/http-helpers");
 const { loadConfig, invalidateConfig } = require("../lib/sla");
+const { validateEngineSettings } = require("../lib/sla-engine");
 
 const STATES = ["Active", "Paused", "Done"];
 
@@ -66,6 +67,11 @@ function validate(body) {
   if (check(weekend.every((d) => Number.isInteger(d) && d >= 0 && d <= 6) && weekend.length < 7, "Weekend days must be day numbers 0-6, and not every day.")) {
     clean.weekend_days = weekend;
   }
+
+  // Engine settings are optional: only the keys that were sent are validated and written, the rest keep their stored value.
+  const engine = validateEngineSettings(body.settings || {});
+  errors.push(...engine.errors);
+  clean.engine_settings = engine.clean;
   return errors.length ? { errors } : { clean };
 }
 
@@ -73,13 +79,21 @@ async function getConfig(req, res) {
   sendJson(res, 200, await loadConfig());
 }
 
-// Full replace: the editor always submits every row, so stored rows mirror what the user sees.
+// Full replace of the assumption tables: the editor always submits every row, so stored rows mirror what the user sees.
+// sla_settings is the exception -- only weekend_days and the engine keys that were sent are replaced.
 async function putConfig(req, res, params, body) {
   const { errors, clean } = validate(body || {});
   if (errors) return sendJson(res, 400, { errors });
 
+  // Cross-check the thresholds against the stored value of whichever one was not sent.
+  const current = await loadConfig();
+  const merged = { ...current.settings, ...clean.engine_settings };
+  if (Number(merged.at_risk_threshold_pct) > Number(merged.breach_threshold_pct)) {
+    return sendJson(res, 400, { errors: ["at_risk_threshold_pct must not be greater than breach_threshold_pct."] });
+  }
+
   await transaction(async (tx) => {
-    for (const t of ["sla_stages", "sla_priorities", "sla_categories", "sla_statuses", "sla_settings"]) {
+    for (const t of ["sla_stages", "sla_priorities", "sla_categories", "sla_statuses"]) {
       await tx.query(`DELETE FROM ${t}`);
     }
     for (const s of clean.stages) {
@@ -92,7 +106,12 @@ async function putConfig(req, res, params, body) {
     }
     for (const c of clean.categories) await tx.query("INSERT INTO sla_categories (name, factor) VALUES (@name, @factor)", c);
     for (const s of clean.statuses) await tx.query("INSERT INTO sla_statuses (name, state) VALUES (@name, @state)", s);
-    await tx.query("INSERT INTO sla_settings (setting_key, setting_value) VALUES (N'weekend_days', @value)", { value: clean.weekend_days.join(",") });
+
+    const settings = { weekend_days: clean.weekend_days.join(","), ...clean.engine_settings };
+    for (const [key, value] of Object.entries(settings)) {
+      await tx.query("DELETE FROM sla_settings WHERE setting_key = @key", { key });
+      await tx.query("INSERT INTO sla_settings (setting_key, setting_value) VALUES (@key, @value)", { key, value });
+    }
   });
   invalidateConfig();
   sendJson(res, 200, await loadConfig());

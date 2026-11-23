@@ -563,12 +563,19 @@ function switchScreen(screen) {
   const isFollowup = screen === "followup";
   const isMyFollowups = screen === "myfollowups";
   const isDashboard = screen === "dashboard";
-  document.getElementById("listScreen").classList.toggle("hidden", isQuery || isFollowup || isMyFollowups || isDashboard);
+  const isStageSla = screen === "stagesla";
+  document.getElementById("listScreen").classList.toggle("hidden", isQuery || isFollowup || isMyFollowups || isDashboard || isStageSla);
   document.getElementById("queryScreen").classList.toggle("hidden", !isQuery);
   document.getElementById("followupScreen").classList.toggle("hidden", !isFollowup);
   document.getElementById("myFollowupsScreen").classList.toggle("hidden", !isMyFollowups);
   document.getElementById("dashboardScreen").classList.toggle("hidden", !isDashboard);
-  document.getElementById("newRequestBtn").classList.toggle("hidden", isQuery || isFollowup || isMyFollowups || isDashboard);
+  document.getElementById("stageSlaScreen").classList.toggle("hidden", !isStageSla);
+  document.getElementById("newRequestBtn").classList.toggle("hidden", isQuery || isFollowup || isMyFollowups || isDashboard || isStageSla);
+
+  if (isStageSla) {
+    loadStageSlaScreen();
+    return;
+  }
 
   if (isFollowup) {
     loadFollowupData();
@@ -1731,8 +1738,8 @@ async function handleAddComment(recordId, panel) {
   }
 }
 
-function openViewPanel(request) {
-  state.viewingId = request.id;
+// Fills the drawer for `request`; also used to re-render it in place after a stage SLA change.
+function populateViewPanel(request) {
   const isIncidents = state.screen === "incidents";
   const refNo = isIncidents ? request.incident_id : request.br_no;
   const label = isIncidents ? "Incident" : "Request";
@@ -1740,15 +1747,21 @@ function openViewPanel(request) {
   document.getElementById("viewPanelBody").innerHTML = renderViewBody(request);
   wireViewCopyButtons();
   updateViewFollowButton(entityType(), request.id);
-  document.getElementById("viewOverlay").classList.remove("hidden");
-  document.getElementById("viewPanel").classList.remove("hidden");
-  lockBodyScroll();
   loadAndRenderComments(request.id, "viewCommentList");
   loadAndRenderHistory(request.id, "viewHistoryList");
+  if (!isIncidents) loadStageSla(request.id);
   document.getElementById("viewAddCommentBtn").onclick = () => handleAddComment(request.id, "view");
   document.getElementById("viewNewCommentText").onkeydown = (e) => {
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) handleAddComment(request.id, "view");
   };
+}
+
+function openViewPanel(request) {
+  state.viewingId = request.id;
+  populateViewPanel(request);
+  document.getElementById("viewOverlay").classList.remove("hidden");
+  document.getElementById("viewPanel").classList.remove("hidden");
+  lockBodyScroll();
 }
 
 function closeViewPanel() {
@@ -1921,6 +1934,7 @@ function renderViewBody(r) {
         <div><dt>Closed Date</dt><dd>${val(r.closed_date)}</dd></div>
       </dl>
     </section>
+    ${!isIncidents ? stageSlaSectionHtml() : ""}
     ${renderSlaSection(r)}
     <section class="view-section">
       <h3>Record Info</h3>
@@ -2165,7 +2179,7 @@ const SLA_TABS = {
   },
   priorities: {
     label: "Priority factors",
-    hint: "Stage days are multiplied by the factor and rounded up (minimum 1 day). Response and update cadence are reference targets.",
+    hint: "Legacy time-based SLA: stage days are multiplied by the factor and rounded up (minimum 1 day). The effort-driven stage SLA uses the same factor as set in General > Priority factor. Response and update cadence are reference targets.",
   },
   categories: {
     label: "Category factors",
@@ -2175,7 +2189,7 @@ const SLA_TABS = {
     label: "Status handling",
     hint: "Done statuses have no remaining time. Paused statuses stop the SLA clock (the target is shown as if resumed today).",
   },
-  general: { label: "General", hint: "Days that do not count as working days." },
+  general: { label: "General", hint: "Weekend days, plus the stage SLA thresholds and rules. The stage SLA uses the \"Effort (man-days)\" column of Stage times as each stage's default planned effort." },
 };
 const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -2224,8 +2238,22 @@ function renderSlaSettingsTable() {
     );
   } else {
     const weekend = new Set(slaCfg.settings.weekend_days);
+    const s = slaCfg.settings;
+    const mode = s.priority_factor_mode || "multiplier";
     wrap.innerHTML = `<div class="sla-weekend"><strong>Weekend days</strong>${WEEKDAY_NAMES.map((n, d) =>
-      `<label><input type="checkbox" data-weekday="${d}" ${weekend.has(d) ? "checked" : ""} /> ${n}</label>`).join("")}</div>`;
+      `<label><input type="checkbox" data-weekday="${d}" ${weekend.has(d) ? "checked" : ""} /> ${n}</label>`).join("")}</div>
+      <div class="sla-engine">
+        <h4>Stage SLA (effort-driven)</h4>
+        <label>At Risk above <input type="number" data-setting="at_risk_threshold_pct" value="${escapeHtml(s.at_risk_threshold_pct)}" min="1" max="1000" step="1" /> % of the stage target</label>
+        <label>Breached above <input type="number" data-setting="breach_threshold_pct" value="${escapeHtml(s.breach_threshold_pct)}" min="1" max="1000" step="1" /> % of the stage target</label>
+        <label>Priority factor
+          <select data-setting="priority_factor_mode">
+            <option value="multiplier" ${mode === "multiplier" ? "selected" : ""}>Multiply planned effort by the factor (Critical 0.4)</option>
+            <option value="divisor" ${mode === "divisor" ? "selected" : ""}>Divide planned effort by the factor (Critical 1.5)</option>
+          </select></label>
+        <label class="sla-check"><input type="checkbox" data-setting="enforce_stage_order" ${s.enforce_stage_order ? "checked" : ""} /> A stage can only start once every earlier stage is completed or cancelled</label>
+        <label class="sla-check"><input type="checkbox" data-setting="auto_start_next_stage" ${s.auto_start_next_stage ? "checked" : ""} /> Start the next stage automatically when a stage is completed</label>
+      </div>`;
   }
 }
 
@@ -2308,6 +2336,13 @@ function wireSlaSettings() {
       if (el.checked) days.add(Number(el.dataset.weekday));
       else days.delete(Number(el.dataset.weekday));
       slaCfg.settings.weekend_days = [...days].sort();
+      return;
+    }
+    if (el.dataset.setting !== undefined) {
+      const key = el.dataset.setting;
+      if (el.type === "checkbox") slaCfg.settings[key] = el.checked;
+      else if (el.type === "number") slaCfg.settings[key] = el.value === "" ? "" : Number(el.value);
+      else slaCfg.settings[key] = el.value;
       return;
     }
     if (el.dataset.row === undefined) return;
@@ -2799,6 +2834,7 @@ function wireEvents() {
   wireMyFollowupsEvents();
   wireDashboardEvents();
   wireSlaSettings();
+  wireStageSla();
 }
 
 // Heartbeat: poll /healthz every 20 s and show/hide the connection-lost banner

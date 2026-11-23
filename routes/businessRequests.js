@@ -3,6 +3,7 @@ const { validateBusinessRequest } = require("./validation");
 const { sendJson, parseId } = require("../lib/http-helpers");
 const { resolveChangedBy } = require("../lib/current-user");
 const { withSla } = require("../lib/sla");
+const { syncLegacyRequest } = require("../lib/sla-service");
 const { parseSystemIds, setSystems } = require("../lib/systems");
 
 const BOOLEAN_FIELDS = ["newgen_related", "estimated", "ba_required", "brd_assigned", "regulatory"];
@@ -196,6 +197,7 @@ async function create(req, res, params, body) {
       await recordHistory(tx, id, "create", row, changedBy);
       return row;
     });
+    await syncLegacyRequest(created.id, changedBy);
     sendJson(res, 201, created);
   } catch (err) {
     if (isUniqueViolation(err)) return sendJson(res, 400, { errors: [UNIQUE_RACE_MESSAGE] });
@@ -233,6 +235,7 @@ async function update(req, res, params, body) {
       await recordHistory(tx, id, "update", row, changedBy);
       return row;
     });
+    await syncLegacyRequest(updated.id, changedBy);
     sendJson(res, 200, updated);
   } catch (err) {
     if (isUniqueViolation(err)) return sendJson(res, 400, { errors: [UNIQUE_RACE_MESSAGE] });
@@ -288,8 +291,10 @@ async function bulkUpdate(req, res, params, body) {
         await recordHistory(tx, id, "bulk-update", updatedRow, changedBy);
         return true;
       });
-      if (found) updated++;
-      else errors.push(`Record ${id} not found.`);
+      if (found) {
+        updated++;
+        if (fieldNames.includes("stage_id") || fieldNames.includes("status_id")) await syncLegacyRequest(id, changedBy);
+      } else errors.push(`Record ${id} not found.`);
     } catch (err) {
       errors.push(`Record ${id}: ${err.message}`);
     }

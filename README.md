@@ -140,6 +140,12 @@ All endpoints return/accept JSON.
 | GET | `/api/lookups` | All dropdown lists at once (`business-units`, `priorities`, `stages`, `statuses`, `tech-owners`, `regulators`) |
 | POST | `/api/lookups/:type` | Add a new dropdown value, e.g. a new regulator: `{"name": "SAMA"}` |
 | DELETE | `/api/lookups/:type/:id` | Remove a dropdown value (blocked with 409 if any request still uses it) |
+| GET | `/api/requests/:id/sla` | Stage-driven SLA status (alias: `/api/business-requests/:id/sla`) |
+| POST | `/api/requests/:id/stage-status` | `{stage, status, plannedEffort?, actualEffortDays?, note?}` -- starts/pauses/resumes/completes the stage SLA |
+| GET | `/api/requests/:id/sla/history` | SLA audit trail (status changes, stage moves, hold periods) |
+| GET | `/api/sla/dashboard` | Stage- and request-level SLA metrics (`?priority=&stage=&health=`) |
+
+The stage/effort-driven SLA engine is documented in [docs/SLA-ENGINE.md](docs/SLA-ENGINE.md). Run its tests with `npm test`.
 
 ## Migrating your existing Excel data in
 

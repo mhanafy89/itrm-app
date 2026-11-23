@@ -6,6 +6,9 @@
   "scripts": {
     "start": "node server.js",
     "seed": "node db/seed.js",
+    "migrate": "node db/migrate.js up",
+    "migrate:sla-backfill": "node db/migrate.js backfill",
+    "test": "node --test \"test/**/*.test.js\"",
     "migrate:sqlite": "node --experimental-sqlite db/migrate-from-sqlite.js"
   },
   "dependencies": {

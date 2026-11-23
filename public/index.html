@@ -31,6 +31,7 @@
 
   <nav class="screen-tabs">
     <button class="screen-tab" data-screen="dashboard">&#128202; Dashboard</button>
+    <button class="screen-tab" data-screen="stagesla">&#9201; Stage SLA</button>
     <button class="screen-tab active" data-screen="requests">Business Requests</button>
     <button class="screen-tab" data-screen="incidents">Incidents</button>
     <button class="screen-tab" data-screen="followup">&#9200; Follow-up</button>
@@ -86,6 +87,31 @@
           <div id="dashboardTrend"></div>
         </div>
       </div>
+    </section>
+
+    <section id="stageSlaScreen" class="dashboard-screen hidden">
+      <div class="dashboard-toolbar">
+        <button type="button" id="stageSlaRefreshBtn" class="btn">&#8635; Refresh</button>
+      </div>
+      <section id="stageSlaDashboard" class="dashboard-panel dashboard-panel-wide">
+        <div class="stage-sla-dash-head">
+          <h3>Stage SLA &ndash; effort-driven</h3>
+          <label>Health
+            <select id="stageSlaHealthFilter">
+              <option value="">All</option>
+              <option value="On Track">On Track</option>
+              <option value="At Risk">At Risk</option>
+              <option value="Breached">Breached</option>
+            </select>
+          </label>
+        </div>
+        <p id="stageSlaThresholds" class="followup-sla-hint"></p>
+        <div id="stageSlaTiles" class="kpi-grid"></div>
+        <h4 class="stage-sla-sub">By stage (started stages)</h4>
+        <div class="stage-sla-scroll"><table id="stageSlaStageTable" class="stage-sla-table"></table></div>
+        <h4 class="stage-sla-sub">Requests (worst first &ndash; click a row for details)</h4>
+        <div class="stage-sla-scroll stage-sla-scroll-tall"><table id="stageSlaRequestTable" class="stage-sla-table"></table></div>
+      </section>
     </section>
 
     <div id="listScreen">
@@ -621,6 +647,7 @@
     </form>
   </div>
 
+  <script src="stage-sla.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

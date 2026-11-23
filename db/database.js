@@ -76,14 +76,59 @@ async function ensureDatabase() {
   }
 }
 
-// Creates any missing tables/indexes (schema.sql is idempotent, so this is safe on every start).
-async function init() {
-  await ensureDatabase();
-  const pool = await getPool();
-  const script = fs.readFileSync(path.join(__dirname, "schema.sql"), "utf8");
+async function runScript(pool, file) {
+  const script = fs.readFileSync(file, "utf8");
   for (const batch of script.split(/^\s*GO\s*$/gim)) {
     if (batch.trim()) await pool.request().batch(batch);
   }
+}
+
+const MIGRATIONS_DIR = path.join(__dirname, "migrations");
+const migrationFiles = () =>
+  fs.existsSync(MIGRATIONS_DIR)
+    ? fs.readdirSync(MIGRATIONS_DIR).filter((f) => /^\d+_.+\.sql$/.test(f)).sort()
+    : [];
+
+// Versioned migrations (db/migrations/NNN_name.sql): each runs once and is recorded in dbo.schema_migrations.
+// Scripts are idempotent too, so a half-applied run can simply be retried.
+async function applyMigrations(pool) {
+  await pool.request().batch(
+    `IF OBJECT_ID(N'dbo.schema_migrations', N'U') IS NULL
+     CREATE TABLE dbo.schema_migrations (
+       name       NVARCHAR(200) NOT NULL CONSTRAINT PK_schema_migrations PRIMARY KEY,
+       applied_at DATETIME2(0)  NOT NULL CONSTRAINT DF_schema_migrations_at DEFAULT SYSUTCDATETIME()
+     )`
+  );
+  const applied = new Set((await pool.request().query("SELECT name FROM dbo.schema_migrations")).recordset.map((r) => r.name));
+  const ran = [];
+  for (const file of migrationFiles()) {
+    const name = file.replace(/\.sql$/, "");
+    if (applied.has(name)) continue;
+    await runScript(pool, path.join(MIGRATIONS_DIR, file));
+    await pool.request().input("name", sql.NVarChar(200), name).query("INSERT INTO dbo.schema_migrations (name) VALUES (@name)");
+    ran.push(name);
+  }
+  return ran;
+}
+
+// Runs db/migrations/rollback/<prefix>_*.down.sql and forgets the migration so it can be re-applied.
+async function rollbackMigration(pool, prefix) {
+  const dir = path.join(MIGRATIONS_DIR, "rollback");
+  const file = fs.existsSync(dir) && fs.readdirSync(dir).find((f) => f.startsWith(`${prefix}_`) && f.endsWith(".down.sql"));
+  if (!file) throw new Error(`No rollback script found for migration "${prefix}".`);
+  await runScript(pool, path.join(dir, file));
+  await pool.request().input("name", sql.NVarChar(200), file.replace(/\.down\.sql$/, "")).query("DELETE FROM dbo.schema_migrations WHERE name = @name");
+  return file;
+}
+
+// Creates any missing tables/indexes (schema.sql is idempotent, so this is safe on every start),
+// then applies any pending versioned migrations.
+async function init() {
+  await ensureDatabase();
+  const pool = await getPool();
+  await runScript(pool, path.join(__dirname, "schema.sql"));
+  // SKIP_MIGRATIONS=true: a DBA applies db/migrations/*.sql by hand (or the engine was rolled back deliberately).
+  if (process.env.SKIP_MIGRATIONS !== "true") await applyMigrations(pool);
 }
 
 // Keep the API shape the frontend already relies on (SQLite returned these as strings / 0-1 integers):
@@ -169,6 +214,8 @@ module.exports = {
   DB_NAME,
   buildConfig,
   init,
+  applyMigrations,
+  rollbackMigration,
   getPool,
   close,
   transaction,

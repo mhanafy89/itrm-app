@@ -6,6 +6,7 @@ const { init, query } = require("./db/database");
 const Router = require("./lib/router");
 const { sendJson, readJsonBody, serveStatic } = require("./lib/http-helpers");
 const { getSessionUser } = require("./lib/auth");
+const { getDefaultService } = require("./lib/sla-service");
 
 const router = new Router();
 require("./routes/auth").register(router);
@@ -13,6 +14,7 @@ require("./routes/businessRequests").register(router);
 require("./routes/incidents").register(router);
 require("./routes/lookups").register(router);
 require("./routes/sla").register(router);
+require("./routes/requestSla").register(router);
 require("./routes/query").register(router);
 require("./routes/import").register(router);
 router.get("/healthz", async (req, res) => {
@@ -96,6 +98,13 @@ init()
     server.listen(PORT, () => {
       console.log(`ITRM Tracker app listening on http://localhost:${PORT}`);
     });
+    // Existing requests get their per-stage SLA tracking created once (idempotent; skipped when none are missing).
+    if (process.env.SLA_BACKFILL_ON_START !== "false") {
+      getDefaultService()
+        .backfillMissing()
+        .then(({ total, created }) => total && console.log(`SLA tracking created for ${created}/${total} existing requests.`))
+        .catch((err) => console.error("SLA backfill failed:", err.message));
+    }
   })
   .catch((err) => {
     console.error("Could not initialize the SQL Server database:", err.message);
