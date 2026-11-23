@@ -1,0 +1,17 @@
+{
+  "name": "itrm-tracker-app",
+  "version": "1.0.0",
+  "description": "ITRM Business Request Tracker - shared web app with a Microsoft SQL Server backend, replacing the Excel tracker with a multi-user input form + database. Uses Node's built-in http module and the mssql driver.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "seed": "node db/seed.js",
+    "migrate:sqlite": "node --experimental-sqlite db/migrate-from-sqlite.js"
+  },
+  "dependencies": {
+    "mssql": "^12.7.9"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  }
+}

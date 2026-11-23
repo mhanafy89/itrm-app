@@ -1,0 +1,36 @@
+services:
+  itrm-tracker:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      SQL_SERVER: sqlserver
+      SQL_PORT: "1433"
+      SQL_DATABASE: ${SQL_DATABASE:-itrm_tracker}
+      SQL_USER: sa
+      SQL_PASSWORD: ${SQL_PASSWORD:?set SQL_PASSWORD in .env (min 8 chars, upper/lower/digit/symbol)}
+      SQL_TRUST_SERVER_CERTIFICATE: "true"   # the dev container uses a self-signed certificate
+      SQL_CREATE_DATABASE: "true"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Dev/test SQL Server. For production point SQL_* at your real server and drop this service.
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${SQL_PASSWORD:?set SQL_PASSWORD in .env}
+    volumes:
+      - itrm-sqldata:/var/opt/mssql   # keeps the database across restarts/updates
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+volumes:
+  itrm-sqldata:
