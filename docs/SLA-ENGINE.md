@@ -37,6 +37,8 @@ Stages are referenced **by name** (the SLA editor replaces `sla_stages` wholesal
 
 Integrity: status `CHECK`; one open work segment and one open hold per stage (filtered unique indexes);
 `UQ(business_request_id, stage_name)`. Writes take `UPDLOCK, HOLDLOCK` on the request row, so concurrent changes serialize.
+All queries inside a transaction run one after another: a SQL Server transaction has a single connection and rejects overlapping requests
+(the in-memory test repository enforces the same rule).
 
 ## 3. Rules
 
@@ -261,7 +263,9 @@ finally `node db/migrate.js down 001` then `up` to prove the rollback.
 
 * Day-granular: a stage started and stopped on the same day consumes 0; there is no business-hours or per-person allocation.
 * Timestamps cannot be backdated through the API (the server clock is used).
-* Stages added to `sla_stages` after a request was tracked do not appear on that request.
+* Stages that leave the pipeline after a request was tracked are ignored (kept in the database, excluded from calculations) unless they were
+  actually used; stages that join the pipeline are added to tracked requests the next time the request is read or changed, and by the startup
+  backfill. A removed stage that is still running on a request nobody has used the engine on is rebuilt from the legacy stage/status.
 * Requests created by the Excel/CSV import get tracking at the next startup backfill (or on first view).
 * Category factors (used by the legacy calculation) are not applied by this engine.
 * The dashboard request list is not paginated (it scrolls), and there are no bulk stage actions.

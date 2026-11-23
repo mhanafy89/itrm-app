@@ -37,10 +37,29 @@ function makeConfig(settingsOverride = {}) {
   };
 }
 
-async function setup(settingsOverride) {
-  const repo = new MemorySlaRepository();
+// A SQL Server transaction has one connection and rejects overlapping requests ("There is another request in
+// progress"). Make the in-memory repository behave the same way so such bugs fail the tests.
+function enforceSingleConnection(repo) {
+  let busy = false;
+  const skip = new Set(["constructor", "transaction", "addRequest"]);
+  for (const name of Object.getOwnPropertyNames(MemorySlaRepository.prototype)) {
+    if (skip.has(name) || name.startsWith("_")) continue;
+    const original = repo[name].bind(repo);
+    repo[name] = async (...args) => {
+      if (busy) throw new Error("Can't acquire connection for the request. There is another request in progress.");
+      busy = true;
+      try { return await original(...args); } finally { busy = false; }
+    };
+  }
+  return repo;
+}
+
+async function setup(settingsOverride, mutateConfig) {
+  const repo = enforceSingleConnection(new MemorySlaRepository());
+  const config = makeConfig(settingsOverride);
+  if (mutateConfig) mutateConfig(config);
   const clock = { now: at(11, 23) };
-  const service = new SlaService({ repo, getConfig: async () => makeConfig(settingsOverride), now: () => clock.now });
+  const service = new SlaService({ repo, getConfig: async () => config, now: () => clock.now });
 
   const router = new Router();
   register(router, () => service);
@@ -63,7 +82,7 @@ async function setup(settingsOverride) {
     return { status: res.status, body: await res.json() };
   };
   const post = (id, body, when) => { if (when) clock.now = when; return call("POST", `/api/requests/${id}/stage-status`, body); };
-  return { repo, clock, service, call, post, get: (id) => call("GET", `/api/requests/${id}/sla`), close: () => server.close() };
+  return { repo, clock, config, service, call, post, get: (id) => call("GET", `/api/requests/${id}/sla`), close: () => server.close() };
 }
 
 const stageOf = (sla, name) => sla.stages.find((s) => s.stage === name);
@@ -451,5 +470,118 @@ test("service wrappers (startSLA / pauseSLA / resumeSLA / completeStage) check t
     await t.service.resumeSLA(1, "Planning", "Alice");
     const r = await t.service.completeStage(1, "Planning", "Alice");
     assert.equal(r.transition.to, "Completed");
+  } finally { t.close(); }
+});
+
+// ---------- pipeline changes after tracking was created ----------
+
+const withAnalysis = (config) => config.stages.splice(0, 0, { name: "Analysis", stage_order: 1, is_pipeline: 1, effort_days: 2 });
+const dropAnalysis = (config) => { config.stages.find((s) => s.name === "Analysis").is_pipeline = 0; };
+
+test("a removed stage that is still running is rebuilt from the legacy fields when nobody used the engine yet", async () => {
+  const t = await setup({}, withAnalysis);
+  try {
+    t.repo.addRequest({ id: 1, stage: "Planning", status: "In Progress", priority: "Medium" });
+    // Analysis and Planning share order 1: tracking starts on Analysis, Planning waits
+    let sla = (await t.get(1)).body;
+    assert.equal(sla.currentStage, "Analysis");
+    assert.equal(stageOf(sla, "Planning").status, "Not Started");
+
+    dropAnalysis(t.config); // the SLA editor no longer lists Analysis in the pipeline
+    sla = (await t.get(1)).body;
+    assert.equal(sla.currentStage, "Planning");
+    assert.equal(sla.status, "In Progress");
+    assert.equal(stageOf(sla, "Analysis"), undefined);
+    assert.equal((await t.repo.listStages(1)).some((s) => s.stage_name === "Analysis"), false);
+
+    // and the stage can now be completed
+    const done = await t.post(1, { stage: "Planning", status: "Completed" }, at(11, 25));
+    assert.equal(done.status, 200);
+    assert.equal(done.body.currentStage, "BA");
+  } finally { t.close(); }
+});
+
+test("a removed stage that has real history stays visible instead of being deleted", async () => {
+  const t = await setup({}, withAnalysis);
+  try {
+    t.repo.addRequest({ id: 1, stage: "Analysis", status: "In Progress", priority: "Medium" });
+    await t.get(1);
+    await t.post(1, { stage: "Analysis", status: "On Hold" }, at(11, 24)); // real use of the engine
+    dropAnalysis(t.config);
+    const sla = (await t.get(1)).body;
+    assert.equal(stageOf(sla, "Analysis").status, "On Hold");
+    assert.equal((await t.repo.listStages(1)).some((s) => s.stage_name === "Analysis"), true);
+  } finally { t.close(); }
+});
+
+test("removed stages that were never started are ignored by every calculation", async () => {
+  const t = await setup({}, withAnalysis);
+  try {
+    t.repo.addRequest({ id: 1, stage: "Development", status: "Not Started", priority: "Medium" });
+    await t.get(1); // Analysis is backfilled Completed
+    dropAnalysis(t.config);
+    const sla = (await t.get(1)).body;
+    assert.equal(stageOf(sla, "Analysis"), undefined);
+    assert.equal(sla.stages.length, 6);
+    assert.equal(sla.currentStage, "Development");
+    const dash = (await t.call("GET", "/api/sla/dashboard")).body;
+    assert.equal(dash.requests[0].currentStage, "Development");
+  } finally { t.close(); }
+});
+
+test("a stage added to the pipeline later is added to tracked requests", async () => {
+  const t = await setup();
+  try {
+    t.repo.addRequest({ id: 1, stage: "Development", status: "In Progress", priority: "Medium" });
+    await t.get(1);
+    t.config.stages.push({ name: "Intake", stage_order: 0, is_pipeline: 1, effort_days: 1 });          // before the current stage
+    t.config.stages.push({ name: "Security Review", stage_order: 3, is_pipeline: 1, effort_days: 2 }); // not before it
+    const sla = (await t.get(1)).body;
+    assert.equal(stageOf(sla, "Intake").status, "Completed");
+    assert.equal(stageOf(sla, "Intake").isBackfilled, true);
+    assert.equal(stageOf(sla, "Security Review").status, "Not Started");
+    assert.equal(sla.currentStage, "Development");
+    assert.equal(sla.status, "In Progress");
+  } finally { t.close(); }
+});
+
+test("reconcileAll via backfillMissing rebuilds requests blocked by a removed running stage", async () => {
+  const t = await setup({}, withAnalysis);
+  try {
+    t.repo.addRequest({ id: 1, stage: "Planning", status: "On Hold", priority: "Medium" });
+    await t.get(1);
+    dropAnalysis(t.config);
+    assert.deepEqual(await t.service.backfillMissing({ logger: { error() {} } }), { total: 1, created: 1 });
+    assert.equal((await t.get(1)).body.currentStage, "Planning");
+    assert.equal((await t.get(1)).body.status, "On Hold");
+    assert.deepEqual(await t.service.backfillMissing(), { total: 0, created: 0 });
+  } finally { t.close(); }
+});
+
+test("editing a request at stage Closed with an active-state status (e.g. Reject) does not reopen it", async () => {
+  const t = await setup({}, (c) => c.statuses.push({ name: "Reject", state: "Active" }));
+  try {
+    t.repo.addRequest({ id: 1, stage: "Closed", status: "Completed", priority: "Medium" });
+    assert.equal((await t.get(1)).body.request.isFinished, true);
+    t.repo.state.requests.get(1).status = "Reject";
+    await t.service.syncFromLegacy(1, "Bob");
+    const sla = (await t.get(1)).body;
+    assert.equal(sla.request.isFinished, true);
+    assert.equal(sla.status, "Completed");
+    assert.equal((await t.repo.listWork(1)).length, 0);
+  } finally { t.close(); }
+});
+
+test("every stage action works when queries cannot overlap (single transaction connection)", async () => {
+  const t = await setup();
+  try {
+    t.repo.addRequest({ id: 1, stage: "Planning", status: "Not Started", priority: "Medium" });
+    for (const status of ["In Progress", "On Hold", "In Progress", "Completed"]) {
+      const r = await t.post(1, { stage: "Planning", status }, at(11, 24));
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+    }
+    assert.equal((await t.call("GET", "/api/requests/1/sla/history")).status, 200);
+    assert.equal((await t.call("GET", "/api/sla/dashboard")).status, 200);
+    assert.equal((await t.service.syncFromLegacy(1, "Bob")).initialized, false);
   } finally { t.close(); }
 });

@@ -33,6 +33,26 @@ class MemorySlaRepository {
   async listTrackedRequests() { return [...this.state.requests.values()].filter((r) => this.state.stages.some((s) => s.business_request_id === r.id)).map((r) => ({ ...r })); }
   async listRequestIdsWithoutTracking() { return [...this.state.requests.keys()].filter((id) => !this.state.stages.some((s) => s.business_request_id === id)); }
 
+  async listRequestIdsWithStaleActiveStages(pipelineNames) {
+    const names = new Set(pipelineNames.map((n) => n.toLowerCase()));
+    const ids = this.state.stages
+      .filter((s) => (s.status === "In Progress" || s.status === "On Hold") && !names.has(s.stage_name.toLowerCase()))
+      .map((s) => s.business_request_id);
+    return [...new Set(ids)];
+  }
+  async hasUserActivity(requestId) {
+    return this.state.statusHistory.some((h) => h.business_request_id === requestId && h.source !== "migration")
+      || this.state.stageHistory.some((h) => h.business_request_id === requestId && h.source !== "migration");
+  }
+  async deleteTracking(requestId) {
+    const ids = new Set(this.state.stages.filter((s) => s.business_request_id === requestId).map((s) => s.id));
+    this.state.stages = this.state.stages.filter((s) => !ids.has(s.id));
+    this.state.work = this.state.work.filter((w) => !ids.has(w.request_stage_id));
+    this.state.pauses = this.state.pauses.filter((p) => !ids.has(p.request_stage_id));
+    this.state.statusHistory = this.state.statusHistory.filter((h) => !ids.has(h.request_stage_id));
+    this.state.stageHistory = this.state.stageHistory.filter((h) => !(h.business_request_id === requestId && h.source === "migration"));
+  }
+
   async listStages(requestId) {
     return this._clone(this.state.stages.filter((s) => s.business_request_id === requestId).sort((a, b) => a.stage_order - b.stage_order || a.id - b.id));
   }
