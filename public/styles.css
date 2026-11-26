@@ -1672,6 +1672,10 @@ body.read-only .write-only { display: none !important; }
 #viewPanelBody .util-track { min-width: 24px; }
 .stage-sla-table tr.clickable-row { cursor: pointer; }
 .stage-sla-table tr.clickable-row:hover td { background: var(--ink-soft); }
+#baTable { min-width: 1200px; }
+#baTable td { vertical-align: top; }
+#baTable .clickable-row { cursor: pointer; }
+#baTable .clickable-row:hover td { background: var(--ink-soft); }
 .stage-sla-title { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stage-tag { font-size: 11px; color: var(--text-muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
 .var-over { color: var(--danger); font-weight: 600; }

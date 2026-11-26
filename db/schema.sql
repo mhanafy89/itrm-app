@@ -64,6 +64,13 @@ CREATE TABLE dbo.tech_owners (
 );
 GO
 
+IF OBJECT_ID(N'dbo.ba_owners', N'U') IS NULL
+CREATE TABLE dbo.ba_owners (
+  id INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_ba_owners PRIMARY KEY,
+  name NVARCHAR(200) NOT NULL CONSTRAINT UQ_ba_owners_name UNIQUE
+);
+GO
+
 IF OBJECT_ID(N'dbo.regulators', N'U') IS NULL
 CREATE TABLE dbo.regulators (
   id   INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_regulators PRIMARY KEY,
@@ -108,6 +115,7 @@ CREATE TABLE dbo.business_requests (
   ba_required                 BIT            NOT NULL CONSTRAINT DF_br_ba_required    DEFAULT 0,
   brd_assigned                BIT            NOT NULL CONSTRAINT DF_br_brd_assigned   DEFAULT 0,
   tech_owner_id               INT            NULL CONSTRAINT FK_br_tech_owner        REFERENCES dbo.tech_owners(id),
+  ba_owner_id                 INT            NULL CONSTRAINT FK_br_ba_owner           REFERENCES dbo.ba_owners(id),
   regulatory                  BIT            NOT NULL CONSTRAINT DF_br_regulatory     DEFAULT 0,
   regulator_id                INT            NULL CONSTRAINT FK_br_regulator         REFERENCES dbo.regulators(id),
   regulatory_deadline         DATE           NULL,

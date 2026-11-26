@@ -19,6 +19,8 @@ services:
   # Dev/test SQL Server. For production point SQL_* at your real server and drop this service.
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2022-latest
+    # SQL Server Linux images are published for amd64; Apple Silicon runs this via Docker emulation.
+    platform: linux/amd64
     environment:
       ACCEPT_EULA: "Y"
       MSSQL_SA_PASSWORD: ${SQL_PASSWORD:?set SQL_PASSWORD in .env}

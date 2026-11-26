@@ -32,6 +32,7 @@
   <nav class="screen-tabs">
     <button class="screen-tab" data-screen="dashboard">&#128202; Dashboard</button>
     <button class="screen-tab" data-screen="stagesla">&#9201; Stage SLA</button>
+    <button class="screen-tab" data-screen="ba">BA Requests</button>
     <button class="screen-tab active" data-screen="requests">Business Requests</button>
     <button class="screen-tab" data-screen="incidents">Incidents</button>
     <button class="screen-tab" data-screen="followup">&#9200; Follow-up</button>
@@ -87,6 +88,15 @@
           <div id="dashboardTrend"></div>
         </div>
       </div>
+    </section>
+
+    <section id="baScreen" class="dashboard-screen hidden">
+      <section class="table-wrap">
+        <table id="baTable"><thead><tr><th>BR No</th><th>CR</th><th>Title</th><th>Description</th><th>Priority</th><th>Stage</th><th>Status</th><th>Analysis Start Date</th><th>Analysis End Date</th><th>Last Comment</th></tr></thead>
+          <tbody id="baBody"><tr><td colspan="10" class="empty">Loading...</td></tr></tbody>
+        </table>
+      </section>
+      <div id="baFooter" class="table-footer"></div>
     </section>
 
     <section id="stageSlaScreen" class="dashboard-screen hidden">
@@ -453,6 +463,15 @@
               <div class="multi-select-dropdown hidden"></div>
             </div>
             <button type="button" class="btn-add" data-lookup="tech-owners" title="Add new Tech Owner">+</button>
+          </span>
+        </label>
+        <label data-br-only>BA Owner
+          <span class="select-with-add">
+            <div class="form-combo"><input type="text" class="form-combo-input" placeholder="-- select --" autocomplete="off" />
+              <input type="hidden" id="ba_owner_id" name="ba_owner_id" class="form-combo-value" />
+              <div class="form-combo-dropdown hidden"></div>
+            </div>
+            <button type="button" class="btn-add" data-lookup="ba-owners" title="Add new BA Owner">+</button>
           </span>
         </label>
         <label>RM

@@ -8,6 +8,7 @@ const LOOKUP_TABLES = {
   stages: "stages",
   statuses: "statuses",
   "tech-owners": "tech_owners",
+  "ba-owners": "ba_owners",
   regulators: "regulators",
   requesters: "requesters",
   rms: "rms",

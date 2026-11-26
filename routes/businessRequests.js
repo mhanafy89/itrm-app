@@ -25,6 +25,7 @@ const WRITABLE_FIELDS = [
   "ba_required",
   "brd_assigned",
   "tech_owner_id",
+  "ba_owner_id",
   "regulatory",
   "regulator_id",
   "regulatory_deadline",
@@ -53,6 +54,7 @@ const LOOKUP_FIELDS = [
   "stage_id",
   "status_id",
   "tech_owner_id",
+  "ba_owner_id",
   "regulator_id",
   "rm_id",
 ];
@@ -88,6 +90,13 @@ const LIST_SELECT = `
     r.name  AS regulator,
     COALESCE(re.name, br.requester) AS requester,
     rm.name AS rm,
+    bao.name AS ba_owner,
+    CASE WHEN EXISTS (
+      SELECT 1 FROM business_request_history brh
+      JOIN stages ba_stage ON LOWER(LTRIM(RTRIM(ba_stage.name))) = 'ba'
+      WHERE brh.business_request_id = br.id
+        AND TRY_CONVERT(INT, JSON_VALUE(brh.snapshot_json, '$.stage_id')) = ba_stage.id
+    ) THEN 1 ELSE 0 END AS ba_stage_seen,
     (SELECT TOP 1 rc.body       FROM request_comments rc WHERE rc.business_request_id = br.id ORDER BY rc.created_at DESC, rc.id DESC) AS last_comment,
     (SELECT TOP 1 rc.created_at FROM request_comments rc WHERE rc.business_request_id = br.id ORDER BY rc.created_at DESC, rc.id DESC) AS last_comment_at
   FROM business_requests br
@@ -99,6 +108,7 @@ const LIST_SELECT = `
   LEFT JOIN regulators r      ON r.id  = br.regulator_id
   LEFT JOIN requesters re     ON re.id  = br.requester_id
   LEFT JOIN rms rm            ON rm.id  = br.rm_id
+  LEFT JOIN ba_owners bao     ON bao.id = br.ba_owner_id
 `;
 
 function normalizeBody(body) {

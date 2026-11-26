@@ -342,6 +342,7 @@ const FORM_COMBOS = [
   { url: "business-units", id: "business_unit_id" },
   { url: "requesters",     id: "requester_id" },
   { url: "rms",            id: "rm_id" },
+  { url: "ba-owners",      id: "ba_owner_id" },
 ];
 
 // Form fields that let the user pick several lookup values at once (checkbox dropdown).
@@ -543,6 +544,16 @@ async function loadRequests() {
   renderTable();
 }
 
+function renderBaTable() {
+  const baStage = (state.lookups?.stages || []).find((s) => s.name.trim().toLowerCase() === "ba");
+  const rows = state.requests.filter((r) => (baStage && Number(r.stage_id) === Number(baStage.id)) || r.ba_owner_id || r.ba_stage_seen);
+  document.getElementById("baBody").innerHTML = rows.length ? rows.map((r) => `<tr class="clickable-row" data-ba-id="${r.id}">
+    <td>${escapeHtml(r.br_no)}</td><td>${escapeHtml(r.cr)}</td><td class="td-wrap">${escapeHtml(r.title)}</td><td class="td-wrap">${escapeHtml(r.description)}</td>
+    <td>${renderWorkflowBadge(r.priority, "priority")}</td><td>${renderWorkflowBadge(r.stage, "stage")}</td><td>${renderWorkflowBadge(r.status, "status")}</td>
+    <td>${escapeHtml(r.analysis_planned_start_date || "")}</td><td>${escapeHtml(r.analysis_planned_end_date || "")}</td><td class="td-wrap">${escapeHtml(r.last_comment || "")}</td></tr>`).join("") : '<tr><td colspan="10" class="empty">No BA requests found.</td></tr>';
+  document.getElementById("baFooter").textContent = `${rows.length} request${rows.length === 1 ? "" : "s"}`;
+}
+
 async function loadIncidents() {
   state.incidents = enrichAging(await api("/api/incidents"));
   renderTable();
@@ -550,7 +561,10 @@ async function loadIncidents() {
 
 async function loadData() {
   if (state.screen === "incidents") await loadIncidents();
-  else await loadRequests();
+  else {
+    await loadRequests();
+    if (state.screen === "ba") renderBaTable();
+  }
 }
 
 function switchScreen(screen) {
@@ -564,13 +578,17 @@ function switchScreen(screen) {
   const isMyFollowups = screen === "myfollowups";
   const isDashboard = screen === "dashboard";
   const isStageSla = screen === "stagesla";
-  document.getElementById("listScreen").classList.toggle("hidden", isQuery || isFollowup || isMyFollowups || isDashboard || isStageSla);
+  const isBa = screen === "ba";
+  document.getElementById("listScreen").classList.toggle("hidden", isQuery || isFollowup || isMyFollowups || isDashboard || isStageSla || isBa);
+  document.getElementById("baScreen").classList.toggle("hidden", !isBa);
   document.getElementById("queryScreen").classList.toggle("hidden", !isQuery);
   document.getElementById("followupScreen").classList.toggle("hidden", !isFollowup);
   document.getElementById("myFollowupsScreen").classList.toggle("hidden", !isMyFollowups);
   document.getElementById("dashboardScreen").classList.toggle("hidden", !isDashboard);
   document.getElementById("stageSlaScreen").classList.toggle("hidden", !isStageSla);
-  document.getElementById("newRequestBtn").classList.toggle("hidden", isQuery || isFollowup || isMyFollowups || isDashboard || isStageSla);
+  document.getElementById("newRequestBtn").classList.toggle("hidden", isQuery || isFollowup || isMyFollowups || isDashboard || isStageSla || isBa);
+
+  if (isBa) { loadRequests().then(renderBaTable); return; }
 
   if (isStageSla) {
     loadStageSlaScreen();
@@ -1517,7 +1535,7 @@ function openForm(request) {
   if (request) updateFormFollowButton(isIncidents ? "incidents" : "requests", request.id);
 
   const fields = [
-    "id", "br_no", "cr", "submission_date", "business_unit_id", "business_category_id", "requester_id", "title", "description",
+    "id", "br_no", "cr", "submission_date", "business_unit_id", "business_category_id", "requester_id", "title", "description", "ba_owner_id",
     "priority_id", "stage_id", "status_id", "regulator_id",
     "regulatory_deadline", "rm_id", "closed_date",
     ...PIPELINE_FIELDS.map((f) => f.key),
@@ -1912,6 +1930,7 @@ function renderViewBody(r) {
         <div><dt>BRD Assigned</dt><dd>${bool(r.brd_assigned)}</dd></div>
         ` : ""}
         <div><dt>Tech Owner</dt><dd>${val(r.tech_owner)}</dd></div>
+        ${!isIncidents ? `<div><dt>BA Owner</dt><dd>${val(r.ba_owner)}</dd></div>` : ""}
         <div><dt>RM</dt><dd>${val(r.rm)}</dd></div>
         ${!isIncidents ? `
         <div><dt>Regulatory</dt><dd>${bool(r.regulatory)}</dd></div>
@@ -2057,6 +2076,7 @@ const LOOKUP_LABELS = {
   stages: "Stages",
   statuses: "Statuses",
   "tech-owners": "Tech Owners",
+  "ba-owners": "BA Owners",
   regulators: "Regulators",
   requesters: "Requesters",
   rms: "RMs",
@@ -2537,6 +2557,13 @@ function wireEvents() {
         openViewPanel(request);
       }
     }
+  });
+
+  document.getElementById("baBody").addEventListener("click", (e) => {
+    const row = e.target.closest("tr[data-ba-id]");
+    if (!row) return;
+    const request = state.requests.find((r) => String(r.id) === row.dataset.baId);
+    if (request) openViewPanel(request);
   });
 
   document.getElementById("requestsBody").addEventListener("change", (e) => {
